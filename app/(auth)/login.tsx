@@ -1,14 +1,14 @@
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-  Pressable,
-  Text,
-  TextInput,
-  View,
-  ScrollView,
-  Platform,
-  KeyboardAvoidingView,
-  TouchableOpacity,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 export default function Login() {
@@ -24,7 +24,11 @@ export default function Login() {
         className="flex-1"
       >
         <ScrollView
-          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 64, paddingBottom: 32 }}
+          contentContainerStyle={{
+            paddingHorizontal: 24,
+            paddingTop: 64,
+            paddingBottom: 32,
+          }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -37,7 +41,7 @@ export default function Login() {
                   <View className="w-10 h-10 border-4 border-white rounded-full" />
                   <View className="absolute top-5 left-5 w-7 h-3 bg-white transform rotate-45" />
                 </View>
-                
+
                 <Text className="text-4xl font-bold text-white mb-3 tracking-tight text-center">
                   Welcome Back
                 </Text>
@@ -96,7 +100,8 @@ export default function Login() {
                       : "border-slate-800"
                   }`}
                   style={{
-                    shadowColor: focusedField === "password" ? "#10b981" : "#000",
+                    shadowColor:
+                      focusedField === "password" ? "#10b981" : "#000",
                     shadowOffset: { width: 0, height: 4 },
                     shadowOpacity: focusedField === "password" ? 0.3 : 0.1,
                     shadowRadius: 8,
@@ -155,7 +160,7 @@ export default function Login() {
               {/* Register Link */}
               <View className="flex-row justify-center items-center">
                 <Text className="text-slate-400 text-base">
-                  Don't have an account?
+                  Don&apos;t have an account?
                 </Text>
                 <Pressable onPress={() => router.push("./register")}>
                   <Text className="text-emerald-400 font-bold ml-2 text-base">
@@ -169,9 +174,13 @@ export default function Login() {
             <View className="mt-8 pt-6 border-t border-slate-800">
               <Text className="text-slate-600 text-xs text-center leading-5">
                 By continuing, you agree to our{" "}
-                <Text className="text-slate-500 font-medium">Terms of Service</Text>
+                <Text className="text-slate-500 font-medium">
+                  Terms of Service
+                </Text>
                 {"\n"}and{" "}
-                <Text className="text-slate-500 font-medium">Privacy Policy</Text>
+                <Text className="text-slate-500 font-medium">
+                  Privacy Policy
+                </Text>
               </Text>
             </View>
           </View>
