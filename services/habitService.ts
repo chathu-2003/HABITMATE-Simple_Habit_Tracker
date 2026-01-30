@@ -1,5 +1,19 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  updateDoc,
+  serverTimestamp,
+  Timestamp,
+} from "firebase/firestore";
+import { db } from "./firebase";
 
+/* =======================
+   Habit Interface
+======================= */
 export interface Habit {
   id: string;
   name: string;
@@ -9,154 +23,143 @@ export interface Habit {
   icon: string;
   color: string;
   completed: boolean;
-  createdAt: string;
+  createdAt: Timestamp;
 }
 
-const HABITS_STORAGE_KEY = "habits_list";
+const HABITS_COLLECTION = "habits";
 
-/**
- * Add a new habit to storage
- */
-export const addHabit = async (habit: Habit): Promise<boolean> => {
+/* =======================
+   ADD HABIT
+======================= */
+export const addHabit = async (
+  habit: Omit<Habit, "id" | "createdAt">,
+): Promise<boolean> => {
   try {
-    const existingHabits = await getAllHabits();
-    const updatedHabits = [...existingHabits, habit];
-    await AsyncStorage.setItem(
-      HABITS_STORAGE_KEY,
-      JSON.stringify(updatedHabits),
-    );
+    await addDoc(collection(db, HABITS_COLLECTION), {
+      ...habit,
+      completed: habit.completed ?? false,
+      createdAt: serverTimestamp(),
+    });
+    console.log("✅ Habit added successfully");
     return true;
   } catch (error) {
-    console.error("Error adding habit:", error);
+    console.error("❌ addHabit error:", error);
     return false;
   }
 };
 
-/**
- * Get all habits from storage
- */
+/* =======================
+   GET ALL HABITS
+======================= */
 export const getAllHabits = async (): Promise<Habit[]> => {
   try {
-    const habitsJson = await AsyncStorage.getItem(HABITS_STORAGE_KEY);
-    if (habitsJson) {
-      return JSON.parse(habitsJson) as Habit[];
-    }
-    return [];
+    const snapshot = await getDocs(collection(db, HABITS_COLLECTION));
+    const habits = snapshot.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Omit<Habit, "id">),
+    }));
+    console.log(`✅ Loaded ${habits.length} habits`);
+    return habits;
   } catch (error) {
-    console.error("Error getting habits:", error);
+    console.error("❌ getAllHabits error:", error);
     return [];
   }
 };
 
-/**
- * Get a specific habit by ID
- */
-export const getHabitById = async (habitId: string): Promise<Habit | null> => {
+/* =======================
+   GET HABIT BY ID
+======================= */
+export const getHabitById = async (
+  habitId: string,
+): Promise<Habit | null> => {
   try {
-    const habits = await getAllHabits();
-    return habits.find((h) => h.id === habitId) || null;
+    const snap = await getDoc(doc(db, HABITS_COLLECTION, habitId));
+    if (!snap.exists()) {
+      console.warn(`⚠️ Habit not found: ${habitId}`);
+      return null;
+    }
+
+    return {
+      id: snap.id,
+      ...(snap.data() as Omit<Habit, "id">),
+    };
   } catch (error) {
-    console.error("Error getting habit by ID:", error);
+    console.error("❌ getHabitById error:", error);
     return null;
   }
 };
 
-/**
- * Update a habit
- */
+/* =======================
+   UPDATE HABIT ✅
+======================= */
 export const updateHabit = async (
   habitId: string,
-  updates: Partial<Habit>,
+  updates: Partial<Omit<Habit, "id" | "createdAt">>,
 ): Promise<boolean> => {
   try {
-    const habits = await getAllHabits();
-    const updatedHabits = habits.map((h) =>
-      h.id === habitId ? { ...h, ...updates } : h,
-    );
-    await AsyncStorage.setItem(
-      HABITS_STORAGE_KEY,
-      JSON.stringify(updatedHabits),
-    );
+    // Check if document exists before updating
+    const habitDoc = await getDoc(doc(db, HABITS_COLLECTION, habitId));
+    
+    if (!habitDoc.exists()) {
+      console.error(`❌ Cannot update: Habit ${habitId} does not exist`);
+      return false;
+    }
+
+    await updateDoc(doc(db, HABITS_COLLECTION, habitId), updates);
+    console.log(`✅ Habit ${habitId} updated successfully`);
     return true;
   } catch (error) {
-    console.error("Error updating habit:", error);
+    console.error("❌ updateHabit error:", error);
     return false;
   }
 };
 
-/**
- * Delete a habit
- */
-export const deleteHabit = async (habitId: string): Promise<boolean> => {
+/* =======================
+   DELETE HABIT
+======================= */
+export const deleteHabit = async (
+  habitId: string,
+): Promise<boolean> => {
   try {
-    const habits = await getAllHabits();
-    const filteredHabits = habits.filter((h) => h.id !== habitId);
-    await AsyncStorage.setItem(
-      HABITS_STORAGE_KEY,
-      JSON.stringify(filteredHabits),
-    );
+    // Check if document exists before deleting
+    const habitDoc = await getDoc(doc(db, HABITS_COLLECTION, habitId));
+    
+    if (!habitDoc.exists()) {
+      console.error(`❌ Cannot delete: Habit ${habitId} does not exist`);
+      return false;
+    }
+
+    await deleteDoc(doc(db, HABITS_COLLECTION, habitId));
+    console.log(`✅ Habit ${habitId} deleted successfully`);
     return true;
   } catch (error) {
-    console.error("Error deleting habit:", error);
+    console.error("❌ deleteHabit error:", error);
     return false;
   }
 };
 
-/**
- * Toggle habit completion status
- */
+/* =======================
+   TOGGLE COMPLETION ✅
+======================= */
 export const toggleHabitCompletion = async (
   habitId: string,
 ): Promise<boolean> => {
   try {
     const habit = await getHabitById(habitId);
-    if (habit) {
-      return await updateHabit(habitId, { completed: !habit.completed });
+    
+    if (!habit) {
+      console.error(`❌ Cannot toggle: Habit ${habitId} does not exist`);
+      return false;
     }
-    return false;
-  } catch (error) {
-    console.error("Error toggling habit completion:", error);
-    return false;
-  }
-};
 
-/**
- * Clear all habits
- */
-export const clearAllHabits = async (): Promise<boolean> => {
-  try {
-    await AsyncStorage.removeItem(HABITS_STORAGE_KEY);
+    await updateDoc(doc(db, HABITS_COLLECTION, habitId), {
+      completed: !habit.completed,
+    });
+    
+    console.log(`✅ Habit ${habitId} completion toggled to ${!habit.completed}`);
     return true;
   } catch (error) {
-    console.error("Error clearing all habits:", error);
+    console.error("❌ toggleHabitCompletion error:", error);
     return false;
-  }
-};
-
-/**
- * Get habits by category
- */
-export const getHabitsByCategory = async (
-  category: string,
-): Promise<Habit[]> => {
-  try {
-    const habits = await getAllHabits();
-    return habits.filter((h) => h.category === category);
-  } catch (error) {
-    console.error("Error getting habits by category:", error);
-    return [];
-  }
-};
-
-/**
- * Get completed habits count
- */
-export const getCompletedHabitsCount = async (): Promise<number> => {
-  try {
-    const habits = await getAllHabits();
-    return habits.filter((h) => h.completed).length;
-  } catch (error) {
-    console.error("Error getting completed habits count:", error);
-    return 0;
   }
 };
