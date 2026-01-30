@@ -5,8 +5,8 @@ import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import {
     getAllHabitsFromFirestore,
     subscribeToHabits,
-} from "../services/firestoreService";
-import { getAllHabits } from "../services/habitService";
+} from "../../services/firestoreService";
+import { getAllHabits } from "../../services/habitService";
 
 export default function Progress() {
   const router = useRouter();

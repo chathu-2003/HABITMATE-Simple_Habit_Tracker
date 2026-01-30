@@ -204,24 +204,7 @@ export default function Home() {
               </Text>
             </TouchableOpacity>
 
-            {/* Settings */}
-            <TouchableOpacity
-              onPress={() => router.push("/settings")}
-              className="bg-slate-900 w-[48%] rounded-2xl p-5 mb-4 border-2 border-slate-800"
-              style={{
-                elevation: 4,
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 8,
-              }}
-            >
-              <View className="bg-indigo-500/10 w-12 h-12 rounded-xl items-center justify-center mb-3">
-                <Ionicons name="settings-outline" size={26} color="#6366f1" />
-              </View>
-              <Text className="font-bold text-white text-base">Settings</Text>
-              <Text className="text-slate-400 text-sm mt-1">Preferences</Text>
-            </TouchableOpacity>
+
           </View>
         </View>
 

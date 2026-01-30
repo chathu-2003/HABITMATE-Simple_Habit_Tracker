@@ -2,17 +2,17 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
-import { saveHabitToFirestore } from "../services/firestoreService";
-import { addHabit, getAllHabits } from "../services/habitService";
+import { saveHabitToFirestore } from "../../services/firestoreService";
+import { addHabit, getAllHabits } from "../../services/habitService";
 
 // Legacy exports for backward compatibility
 export const addHabitToStore = async (habit: any) => {
