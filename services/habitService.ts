@@ -5,11 +5,13 @@ import {
   doc,
   getDoc,
   getDocs,
-  updateDoc,
+  query,
   serverTimestamp,
   Timestamp,
+  updateDoc,
+  where,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { auth, db } from "./firebase";
 
 /* =======================
    Habit Interface
@@ -24,6 +26,7 @@ export interface Habit {
   color: string;
   completed: boolean;
   createdAt: Timestamp;
+  userId: string;
 }
 
 const HABITS_COLLECTION = "habits";
@@ -32,15 +35,22 @@ const HABITS_COLLECTION = "habits";
    ADD HABIT
 ======================= */
 export const addHabit = async (
-  habit: Omit<Habit, "id" | "createdAt">,
+  habit: Omit<Habit, "id" | "createdAt" | "userId">,
 ): Promise<boolean> => {
   try {
+    const userId = auth.currentUser?.uid;
+    if (!userId) {
+      console.error("❌ No user logged in");
+      return false;
+    }
+
     await addDoc(collection(db, HABITS_COLLECTION), {
       ...habit,
       completed: habit.completed ?? false,
       createdAt: serverTimestamp(),
+      userId,
     });
-    console.log("✅ Habit added successfully");
+    console.log("✅ Habit added successfully for user:", userId);
     return true;
   } catch (error) {
     console.error("❌ addHabit error:", error);
@@ -53,12 +63,31 @@ export const addHabit = async (
 ======================= */
 export const getAllHabits = async (): Promise<Habit[]> => {
   try {
-    const snapshot = await getDocs(collection(db, HABITS_COLLECTION));
+    const userId = auth.currentUser?.uid;
+    if (!userId) {
+      console.error("❌ No user logged in");
+      return [];
+    }
+
+    console.log("🔍 Fetching habits for userId:", userId);
+
+    const q = query(
+      collection(db, HABITS_COLLECTION),
+      where("userId", "==", userId),
+    );
+    const snapshot = await getDocs(q);
     const habits = snapshot.docs.map((d) => ({
       id: d.id,
       ...(d.data() as Omit<Habit, "id">),
     }));
-    console.log(`✅ Loaded ${habits.length} habits`);
+
+    console.log(`✅ Loaded ${habits.length} habits for user: ${userId}`);
+
+    // Log each habit's userId for debugging
+    habits.forEach((h) => {
+      console.log(`  - Habit: ${h.name}, userId: ${h.userId}`);
+    });
+
     return habits;
   } catch (error) {
     console.error("❌ getAllHabits error:", error);
@@ -69,9 +98,7 @@ export const getAllHabits = async (): Promise<Habit[]> => {
 /* =======================
    GET HABIT BY ID
 ======================= */
-export const getHabitById = async (
-  habitId: string,
-): Promise<Habit | null> => {
+export const getHabitById = async (habitId: string): Promise<Habit | null> => {
   try {
     const snap = await getDoc(doc(db, HABITS_COLLECTION, habitId));
     if (!snap.exists()) {
@@ -99,7 +126,7 @@ export const updateHabit = async (
   try {
     // Check if document exists before updating
     const habitDoc = await getDoc(doc(db, HABITS_COLLECTION, habitId));
-    
+
     if (!habitDoc.exists()) {
       console.error(`❌ Cannot update: Habit ${habitId} does not exist`);
       return false;
@@ -117,13 +144,11 @@ export const updateHabit = async (
 /* =======================
    DELETE HABIT
 ======================= */
-export const deleteHabit = async (
-  habitId: string,
-): Promise<boolean> => {
+export const deleteHabit = async (habitId: string): Promise<boolean> => {
   try {
     // Check if document exists before deleting
     const habitDoc = await getDoc(doc(db, HABITS_COLLECTION, habitId));
-    
+
     if (!habitDoc.exists()) {
       console.error(`❌ Cannot delete: Habit ${habitId} does not exist`);
       return false;
@@ -146,7 +171,7 @@ export const toggleHabitCompletion = async (
 ): Promise<boolean> => {
   try {
     const habit = await getHabitById(habitId);
-    
+
     if (!habit) {
       console.error(`❌ Cannot toggle: Habit ${habitId} does not exist`);
       return false;
@@ -155,8 +180,10 @@ export const toggleHabitCompletion = async (
     await updateDoc(doc(db, HABITS_COLLECTION, habitId), {
       completed: !habit.completed,
     });
-    
-    console.log(`✅ Habit ${habitId} completion toggled to ${!habit.completed}`);
+
+    console.log(
+      `✅ Habit ${habitId} completion toggled to ${!habit.completed}`,
+    );
     return true;
   } catch (error) {
     console.error("❌ toggleHabitCompletion error:", error);

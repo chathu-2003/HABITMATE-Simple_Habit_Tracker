@@ -12,9 +12,9 @@ import {
 import {
   deleteHabit,
   getAllHabits,
-  updateHabit,
-  toggleHabitCompletion,
   Habit,
+  toggleHabitCompletion,
+  updateHabit,
 } from "../../services/habitService";
 
 export default function Habits() {
@@ -27,7 +27,17 @@ export default function Habits() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
-  const [frequency, setFrequency] = useState<"Daily" | "Weekly" | "Monthly">("Daily");
+  const [frequency, setFrequency] = useState<"Daily" | "Weekly" | "Monthly">(
+    "Daily",
+  );
+
+  // Calculate completion stats
+  const completionStats = useMemo(() => {
+    const total = habits.length;
+    const completed = habits.filter((h) => h.completed).length;
+    const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+    return { total, completed, percentage };
+  }, [habits]);
 
   // Load habits
   const loadHabits = async () => {
@@ -70,7 +80,7 @@ export default function Habits() {
       loadHabits();
     } else {
       Alert.alert(
-        "Error", 
+        "Error",
         "Failed to update habit. The habit may have been deleted. Refreshing list...",
         [
           {
@@ -78,9 +88,9 @@ export default function Habits() {
             onPress: () => {
               setSelected(null);
               loadHabits(); // Refresh the list
-            }
-          }
-        ]
+            },
+          },
+        ],
       );
     }
   };
@@ -105,7 +115,7 @@ export default function Habits() {
             loadHabits();
           } else {
             Alert.alert(
-              "Error", 
+              "Error",
               "Failed to delete habit. It may have already been deleted. Refreshing list...",
               [
                 {
@@ -113,9 +123,9 @@ export default function Habits() {
                   onPress: () => {
                     setSelected(null);
                     loadHabits(); // Refresh the list
-                  }
-                }
-              ]
+                  },
+                },
+              ],
             );
           }
         },
@@ -131,14 +141,14 @@ export default function Habits() {
       loadHabits();
     } else {
       Alert.alert(
-        "Error", 
+        "Error",
         "Failed to update habit. The habit may have been deleted. Refreshing list...",
         [
           {
             text: "OK",
-            onPress: () => loadHabits()
-          }
-        ]
+            onPress: () => loadHabits(),
+          },
+        ],
       );
     }
   };
@@ -149,7 +159,7 @@ export default function Habits() {
     return habits.filter(
       (h) =>
         h.name.toLowerCase().includes(q) ||
-        (h.description || "").toLowerCase().includes(q)
+        (h.description || "").toLowerCase().includes(q),
     );
   }, [habits, query]);
 
@@ -162,19 +172,62 @@ export default function Habits() {
       style={{
         flexDirection: "row",
         alignItems: "center",
-        backgroundColor: "#1e293b",
+        backgroundColor: item.completed ? "#10b98120" : "#1e293b",
         padding: 16,
         borderRadius: 16,
         marginBottom: 12,
+        borderWidth: 2,
+        borderColor: item.completed ? "#10b981" : "transparent",
         opacity: loading ? 0.5 : 1,
       }}
     >
+      {/* Completion Indicator */}
+      <View
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: 14,
+          backgroundColor: item.completed ? "#10b981" : "#334155",
+          justifyContent: "center",
+          alignItems: "center",
+          marginRight: 12,
+        }}
+      >
+        <Ionicons
+          name={item.completed ? "checkmark" : "ellipse-outline"}
+          size={18}
+          color={item.completed ? "white" : "#94a3b8"}
+        />
+      </View>
+
       <View style={{ flex: 1 }}>
-        <Text style={{ color: "white", fontSize: 16, fontWeight: "bold" }}>
+        <Text
+          style={{
+            color: item.completed ? "#10b981" : "white",
+            fontSize: 16,
+            fontWeight: "bold",
+            textDecorationLine: item.completed ? "line-through" : "none",
+          }}
+        >
           {item.name}
         </Text>
         <Text style={{ color: "#94a3b8", fontSize: 14 }}>
-          {item.completed ? "✓ Completed" : item.frequency}
+          {item.category} • {item.frequency}
+        </Text>
+      </View>
+
+      {/* Status Badge */}
+      <View
+        style={{
+          paddingVertical: 4,
+          paddingHorizontal: 12,
+          borderRadius: 12,
+          backgroundColor: item.completed ? "#10b981" : "#64748b",
+          marginLeft: 8,
+        }}
+      >
+        <Text style={{ color: "white", fontSize: 12, fontWeight: "bold" }}>
+          {item.completed ? "✓" : "Pending"}
         </Text>
       </View>
     </TouchableOpacity>
@@ -182,9 +235,93 @@ export default function Habits() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#0f172a", padding: 16 }}>
-      <Text style={{ color: "white", fontSize: 24, fontWeight: "bold", marginBottom: 16 }}>
+      <Text
+        style={{
+          color: "white",
+          fontSize: 24,
+          fontWeight: "bold",
+          marginBottom: 16,
+        }}
+      >
         Habits
       </Text>
+
+      {/* Completion Stats */}
+      {habits.length > 0 && (
+        <View
+          style={{
+            backgroundColor: "#1e293b",
+            padding: 12,
+            borderRadius: 12,
+            marginBottom: 16,
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            borderLeftWidth: 4,
+            borderLeftColor: "#10b981",
+          }}
+        >
+          <View>
+            <Text style={{ color: "#94a3b8", fontSize: 12 }}>
+              Today's Progress
+            </Text>
+            <Text
+              style={{
+                color: "#10b981",
+                fontSize: 20,
+                fontWeight: "bold",
+                marginTop: 4,
+              }}
+            >
+              {completionStats.completed} of {completionStats.total} completed
+            </Text>
+          </View>
+          <View
+            style={{
+              width: 70,
+              height: 70,
+              borderRadius: 35,
+              backgroundColor: "#0f172a",
+              justifyContent: "center",
+              alignItems: "center",
+              borderWidth: 3,
+              borderColor: "#10b981",
+            }}
+          >
+            <Text
+              style={{ color: "#10b981", fontSize: 24, fontWeight: "bold" }}
+            >
+              {completionStats.percentage}%
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Help Banner */}
+      <View
+        style={{
+          backgroundColor: "#3b82f620",
+          borderLeftWidth: 4,
+          borderLeftColor: "#3b82f6",
+          padding: 12,
+          borderRadius: 8,
+          marginBottom: 16,
+          flexDirection: "row",
+          alignItems: "flex-start",
+        }}
+      >
+        <Ionicons
+          name="information-circle"
+          size={20}
+          color="#3b82f6"
+          style={{ marginRight: 8 }}
+        />
+        <Text style={{ color: "#93c5fd", fontSize: 13, flex: 1 }}>
+          <Text style={{ fontWeight: "bold" }}>Tap</Text> to edit •{" "}
+          <Text style={{ fontWeight: "bold" }}>Long press</Text> to mark
+          complete
+        </Text>
+      </View>
 
       <TextInput
         placeholder="Search habits..."
@@ -228,8 +365,21 @@ export default function Habits() {
             padding: 20,
           }}
         >
-          <View style={{ backgroundColor: "#0f172a", borderRadius: 16, padding: 20 }}>
-            <Text style={{ color: "white", fontSize: 20, fontWeight: "bold", marginBottom: 16 }}>
+          <View
+            style={{
+              backgroundColor: "#0f172a",
+              borderRadius: 16,
+              padding: 20,
+            }}
+          >
+            <Text
+              style={{
+                color: "white",
+                fontSize: 20,
+                fontWeight: "bold",
+                marginBottom: 16,
+              }}
+            >
               Habit Details
             </Text>
 
@@ -280,7 +430,13 @@ export default function Habits() {
               }}
             />
 
-            <View style={{ flexDirection: "row", marginBottom: 16, flexWrap: "wrap" }}>
+            <View
+              style={{
+                flexDirection: "row",
+                marginBottom: 16,
+                flexWrap: "wrap",
+              }}
+            >
               {(["Daily", "Weekly", "Monthly"] as const).map((f) => (
                 <TouchableOpacity
                   key={f}
@@ -305,7 +461,8 @@ export default function Habits() {
               onPress={onSave}
               disabled={loading || !name.trim()}
               style={{
-                backgroundColor: loading || !name.trim() ? "#64748b" : "#3b82f6",
+                backgroundColor:
+                  loading || !name.trim() ? "#64748b" : "#3b82f6",
                 padding: 14,
                 borderRadius: 12,
                 alignItems: "center",
