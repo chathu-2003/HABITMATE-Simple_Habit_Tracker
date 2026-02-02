@@ -4,7 +4,6 @@ import React from "react";
 
 const tabs = [
   { name: "home", title: "Home", icon: "home-filled" },
-  { name: "news", title: "News", icon: "article" },
    { name: "add-habit", title: "Add Habit", icon: "add-circle" },
   { name: "habits", title: "Habits", icon: "favorite" },
   { name: "progress", title: "Progress", icon: "trending-up" },
@@ -43,3 +42,4 @@ export default function DashboardLayout() {
     </Tabs>
   );
 }
+
