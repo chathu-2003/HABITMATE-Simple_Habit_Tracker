@@ -1,21 +1,90 @@
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import { loging } from "../../services/authService";
+import { auth } from "../../services/firebase";
 
 export default function Login() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [focusedField, setFocusedField] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    // Validate inputs
+    if (!email.trim()) {
+      Alert.alert("Error", "Please enter your email address");
+      return;
+    }
+
+    if (!password.trim()) {
+      Alert.alert("Error", "Please enter your password");
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert("Error", "Please enter a valid email address");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Attempt to login with Firebase
+      await loging(email.trim(), password);
+
+      // Reload user to ensure all data is synced
+      if (auth.currentUser) {
+        await auth.currentUser.reload();
+        console.log("🔄 User reloaded after login");
+      }
+
+      // If successful, navigate to home
+      router.replace("/home");
+    } catch (error: any) {
+      console.error("Login error:", error);
+
+      // Handle specific Firebase errors
+      let errorMessage = "Login failed. Please try again.";
+
+      if (
+        error.code === "auth/invalid-credential" ||
+        error.code === "auth/wrong-password"
+      ) {
+        errorMessage =
+          "Invalid email or password. Please check your credentials.";
+      } else if (error.code === "auth/user-not-found") {
+        errorMessage =
+          "No account found with this email. Please register first.";
+      } else if (error.code === "auth/invalid-email") {
+        errorMessage = "Invalid email format. Please check your email.";
+      } else if (error.code === "auth/user-disabled") {
+        errorMessage = "This account has been disabled.";
+      } else if (error.code === "auth/too-many-requests") {
+        errorMessage = "Too many failed attempts. Please try again later.";
+      } else if (error.code === "auth/network-request-failed") {
+        errorMessage = "Network error. Please check your internet connection.";
+      }
+
+      Alert.alert("Login Failed", errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <View className="flex-1 bg-slate-950">
@@ -133,7 +202,8 @@ export default function Login() {
 
               {/* Login Button */}
               <TouchableOpacity
-                onPress={() => router.replace("/home")}
+                onPress={handleLogin}
+                disabled={loading}
                 className="bg-emerald-500 py-5 rounded-2xl mb-6"
                 style={{
                   shadowColor: "#10b981",
@@ -141,11 +211,16 @@ export default function Login() {
                   shadowOpacity: 0.4,
                   shadowRadius: 12,
                   elevation: 8,
+                  opacity: loading ? 0.7 : 1,
                 }}
               >
-                <Text className="text-white text-center font-bold text-lg tracking-wide">
-                  Sign In
-                </Text>
+                {loading ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <Text className="text-white text-center font-bold text-lg tracking-wide">
+                    Sign In
+                  </Text>
+                )}
               </TouchableOpacity>
 
               {/* Divider */}
