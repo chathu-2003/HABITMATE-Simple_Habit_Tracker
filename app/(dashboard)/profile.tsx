@@ -1,10 +1,12 @@
 import { AuthContext } from "@/context/AuthContext";
+import { logout } from "@/services/authService";
 import { uploadImageToCloudinary } from "@/services/cloudinary";
+import { subscribeToHabits } from "@/services/firestoreService";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { signOut, updateProfile } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
 import React, { useContext, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -33,6 +35,11 @@ export default function Profile() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [location, setLocation] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
+  const [role, setRole] = useState("");
+  const [lastUpdatedDate, setLastUpdatedDate] = useState<Date | null>(null);
+
+  // Debugging state
+  const [snapshotActive, setSnapshotActive] = useState(false);
 
   // UI State
   const [isEditing, setIsEditing] = useState(false);
@@ -40,6 +47,7 @@ export default function Profile() {
   const [isEditingContact, setIsEditingContact] = useState(false);
   const [showImagePickerModal, setShowImagePickerModal] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   // Account Info
   const [accountCreatedDate, setAccountCreatedDate] = useState<Date | null>(
@@ -61,76 +69,121 @@ export default function Profile() {
     achievements: 0,
   });
 
-  // Load profile from Firestore
+  // Load profile from Firestore (real-time listener)
   useEffect(() => {
-    if (!user?.uid) return;
+    const uid = user?.uid ?? auth.currentUser?.uid;
+    if (!uid) {
+      console.log("No uid available yet for profile listener");
+      return;
+    }
 
-    const loadProfile = async () => {
+    console.log(
+      "Setting up realtime listener for user:",
+      uid,
+      "auth.currentUser:",
+      auth.currentUser?.uid,
+    );
+    const unsub = onSnapshot(doc(db, "users", uid), (snap) => {
       try {
-        console.log("Loading profile for user:", user.uid);
-        const snap = await getDoc(doc(db, "users", user.uid));
-
-        let photoURL = null;
-        let displayNameValue = "";
-        let emailValue = "";
+        console.log(
+          "onSnapshot triggered: exists=%s, hasPendingWrites=%s",
+          snap.exists(),
+          snap.metadata.hasPendingWrites,
+        );
 
         if (snap.exists()) {
           const data = snap.data();
-          console.log("✓ Loaded user data from Firestore:", data);
+          console.log("✓ Realtime user data:", data);
 
-          photoURL = data.photoURL || null;
-          displayNameValue = data.displayName || data.name || "";
-          emailValue = data.email || "";
+          const photoURL = data.photoURL || null;
+          const displayNameValue = data.displayName || data.name || "";
+          const emailValue = data.email || "";
 
-          // Load additional fields
           setBio(data.bio || "");
           setPhoneNumber(data.phoneNumber || "");
           setLocation(data.location || "");
-          setDateOfBirth(data.dateOfBirth || "");
-          setAccountCreatedDate(data.createdAt?.toDate() || null);
+          setDateOfBirth(
+            data.dateOfBirth && data.dateOfBirth.toDate
+              ? data.dateOfBirth.toDate().toISOString().split("T")[0]
+              : data.dateOfBirth || "",
+          );
 
-          // Load settings if they exist
+          // Verify with a one-time read (helps debug rules/consistency)
+          (async () => {
+            try {
+              const one = await getDoc(doc(db, "users", uid));
+              console.log(
+                "getDoc verify: exists=%s, data:",
+                one.exists(),
+                one.exists() ? one.data() : null,
+              );
+            } catch (err) {
+              console.error("getDoc verification failed:", err);
+            }
+          })();
+
+          // Parse createdAt robustly (supports Firestore Timestamp, Date, or string)
+          let createdAtDate: Date | null = null;
+          if (data.createdAt) {
+            if (data.createdAt.toDate) {
+              createdAtDate = data.createdAt.toDate();
+            } else {
+              createdAtDate = new Date(data.createdAt);
+            }
+          }
+          setAccountCreatedDate(createdAtDate);
+
+          // Parse updatedAt robustly (supports Firestore Timestamp, Date, or string)
+          let updatedAtDate: Date | null = null;
+          if (data.updatedAt) {
+            if (data.updatedAt.toDate) {
+              updatedAtDate = data.updatedAt.toDate();
+            } else {
+              updatedAtDate = new Date(data.updatedAt);
+            }
+          }
+          setLastUpdatedDate(updatedAtDate);
+
+          // Role
+          setRole(data.role || "");
+
           if (data.settings) {
             setNotificationsEnabled(data.settings.notificationsEnabled ?? true);
             setRemindersEnabled(data.settings.remindersEnabled ?? true);
             setDarkModeEnabled(data.settings.darkModeEnabled ?? true);
             setSoundEnabled(data.settings.soundEnabled ?? true);
           }
+
+          setProfileImage(photoURL);
+          setDisplayName(displayNameValue);
+          setUserEmail(emailValue);
         } else {
-          console.log("✗ No Firestore document found for user:", user.uid);
-        }
-
-        // FALLBACK: Load from Firebase Auth if not in Firestore
-        const currentUser = auth.currentUser;
-        if (currentUser) {
-          console.log("Firebase Auth photoURL:", currentUser.photoURL);
-          console.log("Firebase Auth displayName:", currentUser.displayName);
-
-          if (!photoURL && currentUser.photoURL) {
-            console.log("✓ Using photoURL from Firebase Auth");
-            photoURL = currentUser.photoURL;
-          }
-
-          if (!displayNameValue && currentUser.displayName) {
-            console.log("✓ Using displayName from Firebase Auth");
-            displayNameValue = currentUser.displayName;
-          }
-
-          if (!emailValue && currentUser.email) {
-            emailValue = currentUser.email;
+          console.log(
+            "✗ No Firestore document found for user (realtime):",
+            uid,
+          );
+          // Fallback to auth for basic fields
+          const currentUser = auth.currentUser;
+          if (currentUser) {
+            if (currentUser.photoURL) setProfileImage(currentUser.photoURL);
+            if (currentUser.displayName)
+              setDisplayName(currentUser.displayName);
+            if (currentUser.email) setUserEmail(currentUser.email);
           }
         }
-
-        setProfileImage(photoURL);
-        setDisplayName(displayNameValue);
-        setUserEmail(emailValue);
       } catch (error) {
-        console.error("Profile load error:", error);
+        console.error("Realtime profile listener error:", error);
       }
-    };
+    });
 
-    loadProfile();
-  }, [user?.uid]);
+    // Mark listener as active even if callback hasn't fired yet
+    setSnapshotActive(true);
+
+    return () => {
+      unsub();
+      setSnapshotActive(false);
+    };
+  }, [user?.uid, auth.currentUser?.uid]);
 
   // Sync Firebase Auth changes to local state
   useEffect(() => {
@@ -487,20 +540,122 @@ export default function Profile() {
     );
   };
 
-  // Logout
-  const handleLogout = async () => {
-    Alert.alert("Logout", "Are you sure you want to logout?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Logout",
-        style: "destructive",
-        onPress: async () => {
-          await signOut(auth);
-          router.replace("/(auth)/login");
-        },
-      },
-    ]);
+  // Logout (open confirmation modal)
+  const handleLogout = () => {
+    setShowLogoutModal(true);
   };
+
+  const confirmLogout = async () => {
+    try {
+      // Use centralized logout (clears AsyncStorage too)
+      await logout();
+      router.replace("/(auth)/login");
+    } catch (error: any) {
+      console.error("Logout failed:", error);
+      Alert.alert("Logout failed", error?.message || "Unable to logout");
+    } finally {
+      setShowLogoutModal(false);
+    }
+  };
+
+  // --- Helpers for computing statistics ---
+  const parseDate = (input: any): Date | null => {
+    if (!input) return null;
+    // Firestore Timestamp
+    if (typeof input === "object" && typeof input.toDate === "function") {
+      return input.toDate();
+    }
+    // Object with seconds/nanoseconds (sdk v9 serialized)
+    if (input.seconds) {
+      return new Date(input.seconds * 1000 + (input.nanoseconds || 0) / 1e6);
+    }
+    // ISO string or plain date
+    const d = new Date(input);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
+  const computeLongestStreakFromSet = (dateSet: Set<string>): number => {
+    if (!dateSet || dateSet.size === 0) return 0;
+
+    // Convert to sorted array
+    const dates = Array.from(dateSet).sort();
+    const set = new Set(dateSet);
+    let longest = 0;
+
+    for (const dateStr of dates) {
+      // only start counting when previous day is NOT in set
+      const prev = new Date(dateStr);
+      prev.setDate(prev.getDate() - 1);
+      const prevStr = prev.toISOString().split("T")[0];
+      if (set.has(prevStr)) continue;
+
+      // Count consecutive days forward
+      let count = 1;
+      let next = new Date(dateStr);
+      while (true) {
+        next.setDate(next.getDate() + 1);
+        const nextStr = next.toISOString().split("T")[0];
+        if (set.has(nextStr)) count++;
+        else break;
+      }
+
+      longest = Math.max(longest, count);
+    }
+
+    return longest;
+  };
+
+  // Subscribe to habits and compute statistics in real-time
+  useEffect(() => {
+    const uid = user?.uid ?? auth.currentUser?.uid;
+    const email = user?.email ?? auth.currentUser?.email;
+    if (!uid && !email) return;
+
+    const unsubscribe = subscribeToHabits(
+      (habitsData) => {
+        try {
+          const total = habitsData.length;
+          const completedTotal = habitsData.filter((h) => h.completed).length;
+
+          const now = new Date();
+          const completedThisMonth = habitsData.filter((h) => {
+            if (!h.completed) return false;
+            const d = parseDate((h as any).updatedAt || (h as any).createdAt);
+            return (
+              d &&
+              d.getFullYear() === now.getFullYear() &&
+              d.getMonth() === now.getMonth()
+            );
+          }).length;
+
+          const completionDateSet = new Set<string>();
+          habitsData.forEach((h) => {
+            if (!h.completed) return;
+            const d = parseDate((h as any).updatedAt || (h as any).createdAt);
+            if (d && !isNaN(d.getTime()))
+              completionDateSet.add(d.toISOString().split("T")[0]);
+          });
+
+          const best = computeLongestStreakFromSet(completionDateSet);
+          const achievementsVal = Math.floor(completedTotal / 5);
+
+          setStats({
+            totalHabits: total,
+            completedThisMonth,
+            bestStreak: best,
+            achievements: achievementsVal,
+          });
+        } catch (err) {
+          console.error("Error computing stats:", err);
+        }
+      },
+      (err) => console.error("subscribeToHabits error:", err),
+      uid,
+      email ?? undefined,
+    );
+
+    return () => unsubscribe();
+  }, [user?.uid, auth.currentUser?.uid, user?.email, auth.currentUser?.email]);
 
   const badges = [
     {
@@ -934,6 +1089,36 @@ export default function Profile() {
               </View>
             </View>
 
+            <View className="bg-slate-900 rounded-2xl p-5 mb-3 border-2 border-slate-800">
+              <View className="flex-row items-center">
+                <View className="bg-amber-500/10 w-12 h-12 rounded-xl items-center justify-center mr-4">
+                  <Ionicons name="person-outline" size={24} color="#f59e0b" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-slate-400 text-sm">Role</Text>
+                  <Text className="text-white font-bold mt-1">
+                    {role || "User"}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {lastUpdatedDate && (
+              <View className="bg-slate-900 rounded-2xl p-5 mb-3 border-2 border-slate-800">
+                <View className="flex-row items-center">
+                  <View className="bg-slate-500/10 w-12 h-12 rounded-xl items-center justify-center mr-4">
+                    <Ionicons name="time-outline" size={24} color="#94a3b8" />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-slate-400 text-sm">Last Updated</Text>
+                    <Text className="text-white font-bold mt-1">
+                      {lastUpdatedDate.toLocaleString()}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
             {accountCreatedDate && (
               <View className="bg-slate-900 rounded-2xl p-5 mb-3 border-2 border-slate-800">
                 <View className="flex-row items-center">
@@ -1260,6 +1445,45 @@ export default function Profile() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Logout Confirmation Modal */}
+      <Modal
+        visible={showLogoutModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowLogoutModal(false)}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setShowLogoutModal(false)}
+          className="flex-1 bg-black/60 justify-center items-center"
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            className="bg-slate-900 rounded-2xl p-6 w-11/12"
+          >
+            <Text className="text-white text-xl font-bold mb-2">Logout</Text>
+            <Text className="text-slate-400 mb-4">
+              Are you sure you want to logout?
+            </Text>
+
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                onPress={() => setShowLogoutModal(false)}
+                className="flex-1 bg-slate-800 py-3 rounded-xl items-center border border-slate-700"
+              >
+                <Text className="text-slate-300 font-bold">Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={confirmLogout}
+                className="flex-1 bg-red-500 py-3 rounded-xl items-center"
+              >
+                <Text className="text-white font-bold">Logout</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Image Picker Modal */}
       <Modal

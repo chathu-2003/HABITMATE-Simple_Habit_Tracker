@@ -22,7 +22,9 @@ export interface Habit {
   icon: string;
   color: string;
   completed: boolean;
-  createdAt: string;
+  // Allow timestamps as strings, Firestore Timestamps, or serialized objects
+  createdAt?: any;
+  updatedAt?: any;
   userId?: string; // optional: may contain UID or email
 }
 
