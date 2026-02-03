@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { AuthContext } from "../../context/AuthContext";
+import { auth } from "../../services/firebase";
 import {
   getAllHabitsFromFirestore,
   subscribeToHabits,
@@ -592,6 +593,19 @@ export default function Progress() {
         setIsLoading(true);
         setError(null);
 
+        const uid = user?.uid ?? auth.currentUser?.uid;
+        const email = user?.email ?? auth.currentUser?.email;
+
+        if (!uid && !email) {
+          // No user yet — show local data if any
+          const localHabits = await getAllHabits();
+          if (mounted) {
+            setHabits(localHabits);
+            setIsLoading(false);
+          }
+          return;
+        }
+
         unsubscribe = subscribeToHabits(
           (firestoreHabits) => {
             if (mounted) {
@@ -620,8 +634,8 @@ export default function Progress() {
             }
           },
           // Pass user filters so listener returns only current user's habits
-          user?.uid,
-          user?.email ?? undefined,
+          uid,
+          email ?? undefined,
         );
       } catch (error) {
         if (mounted) {
@@ -639,15 +653,17 @@ export default function Progress() {
         unsubscribe();
       }
     };
-  }, [user?.uid, user?.email]);
+  }, [user?.uid, user?.email, auth.currentUser?.uid, auth.currentUser?.email]);
 
   useFocusEffect(
     React.useCallback(() => {
       const refreshHabits = async () => {
         try {
+          const uid = user?.uid ?? auth.currentUser?.uid;
+          const email = user?.email ?? auth.currentUser?.email;
           const firestoreHabits = await getAllHabitsFromFirestore(
-            user?.uid,
-            user?.email ?? undefined,
+            uid,
+            email ?? undefined,
           );
           setHabits(firestoreHabits);
           setError(null);
