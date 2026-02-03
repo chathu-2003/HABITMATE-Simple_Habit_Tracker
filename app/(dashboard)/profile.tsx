@@ -1,11 +1,11 @@
 import { AuthContext } from "@/context/AuthContext";
-import { logout } from "@/services/authService";
 import { uploadImageToCloudinary } from "@/services/cloudinary";
 import { subscribeToHabits } from "@/services/firestoreService";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { signOut, updateProfile } from "firebase/auth";
+import { logout } from "@/services/authService";
 import { doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
 import React, { useContext, useEffect, useState } from "react";
 import {
