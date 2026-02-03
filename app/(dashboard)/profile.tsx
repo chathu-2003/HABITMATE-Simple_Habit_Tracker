@@ -1,8 +1,17 @@
+import { AuthContext } from "@/context/AuthContext";
+import { uploadImageToCloudinary } from "@/services/cloudinary";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import { signOut, updateProfile } from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import React, { useContext, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
+  Image,
+  Modal,
+  Platform,
   ScrollView,
   Switch,
   Text,
@@ -10,21 +19,424 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { auth, db } from "../../services/firebase";
+
 export default function Profile() {
   const router = useRouter();
-  const [isEditing, setIsEditing] = useState(false);
-  const [userName, setUserName] = useState("Chathura");
-  const [userEmail, setUserEmail] = useState("chathura@example.com");
-  const [userBio, setUserBio] = useState(
-    "Habit enthusiast building better daily routines",
-  );
+  const { user } = useContext(AuthContext);
 
-  // Settings state
+  // Profile State
+  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [bio, setBio] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [location, setLocation] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
+
+  // UI State
+  const [isEditing, setIsEditing] = useState(false);
+  const [isEditingBio, setIsEditingBio] = useState(false);
+  const [isEditingContact, setIsEditingContact] = useState(false);
+  const [showImagePickerModal, setShowImagePickerModal] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  // Account Info
+  const [accountCreatedDate, setAccountCreatedDate] = useState<Date | null>(
+    null,
+  );
+  const [lastActiveDate, setLastActiveDate] = useState<Date | null>(new Date());
+
+  // Settings State
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [remindersEnabled, setRemindersEnabled] = useState(true);
   const [darkModeEnabled, setDarkModeEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
+  // Statistics (These should be fetched from your habit data)
+  const [stats, setStats] = useState({
+    totalHabits: 0,
+    completedThisMonth: 0,
+    bestStreak: 0,
+    achievements: 0,
+  });
+
+  // Load profile from Firestore
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const loadProfile = async () => {
+      try {
+        console.log("Loading profile for user:", user.uid);
+        const snap = await getDoc(doc(db, "users", user.uid));
+
+        let photoURL = null;
+        let displayNameValue = "";
+        let emailValue = "";
+
+        if (snap.exists()) {
+          const data = snap.data();
+          console.log("✓ Loaded user data from Firestore:", data);
+
+          photoURL = data.photoURL || null;
+          displayNameValue = data.displayName || data.name || "";
+          emailValue = data.email || "";
+
+          // Load additional fields
+          setBio(data.bio || "");
+          setPhoneNumber(data.phoneNumber || "");
+          setLocation(data.location || "");
+          setDateOfBirth(data.dateOfBirth || "");
+          setAccountCreatedDate(data.createdAt?.toDate() || null);
+
+          // Load settings if they exist
+          if (data.settings) {
+            setNotificationsEnabled(data.settings.notificationsEnabled ?? true);
+            setRemindersEnabled(data.settings.remindersEnabled ?? true);
+            setDarkModeEnabled(data.settings.darkModeEnabled ?? true);
+            setSoundEnabled(data.settings.soundEnabled ?? true);
+          }
+        } else {
+          console.log("✗ No Firestore document found for user:", user.uid);
+        }
+
+        // FALLBACK: Load from Firebase Auth if not in Firestore
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          console.log("Firebase Auth photoURL:", currentUser.photoURL);
+          console.log("Firebase Auth displayName:", currentUser.displayName);
+
+          if (!photoURL && currentUser.photoURL) {
+            console.log("✓ Using photoURL from Firebase Auth");
+            photoURL = currentUser.photoURL;
+          }
+
+          if (!displayNameValue && currentUser.displayName) {
+            console.log("✓ Using displayName from Firebase Auth");
+            displayNameValue = currentUser.displayName;
+          }
+
+          if (!emailValue && currentUser.email) {
+            emailValue = currentUser.email;
+          }
+        }
+
+        setProfileImage(photoURL);
+        setDisplayName(displayNameValue);
+        setUserEmail(emailValue);
+      } catch (error) {
+        console.error("Profile load error:", error);
+      }
+    };
+
+    loadProfile();
+  }, [user?.uid]);
+
+  // Sync Firebase Auth changes to local state
+  useEffect(() => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      setProfileImage(null);
+      setDisplayName("");
+      setUserEmail("");
+      return;
+    }
+
+    console.log("Syncing Firebase Auth user:", currentUser.email);
+    if (currentUser.photoURL) setProfileImage(currentUser.photoURL);
+    if (currentUser.displayName) setDisplayName(currentUser.displayName);
+    if (currentUser.email) setUserEmail(currentUser.email);
+  }, [user?.uid]);
+
+  // Request permissions
+  const requestPermissions = async () => {
+    if (Platform.OS !== "web") {
+      const cameraStatus = await ImagePicker.requestCameraPermissionsAsync();
+      const mediaStatus =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (
+        cameraStatus.status !== "granted" ||
+        mediaStatus.status !== "granted"
+      ) {
+        Alert.alert(
+          "Permissions Required",
+          "We need camera and media library permissions to update your profile picture.",
+        );
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // Take photo with camera
+  const takePhoto = async () => {
+    try {
+      const hasPermission = await requestPermissions();
+      if (!hasPermission) return;
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        uploadProfileImage(result.assets[0].uri);
+        setShowImagePickerModal(false);
+      }
+    } catch (error) {
+      console.error("Error taking photo:", error);
+      Alert.alert("Error", "Failed to take photo. Please try again.");
+    }
+  };
+
+  // Pick image from gallery
+  const pickImage = async () => {
+    try {
+      const hasPermission = await requestPermissions();
+      if (!hasPermission) return;
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        uploadProfileImage(result.assets[0].uri);
+        setShowImagePickerModal(false);
+      }
+    } catch (error) {
+      console.error("Error picking image:", error);
+      Alert.alert("Error", "Failed to select image. Please try again.");
+    }
+  };
+
+  // Upload profile image to Cloudinary and Firebase
+  const uploadProfileImage = async (imageUri: string) => {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      console.error("No user logged in - auth.currentUser is null");
+      Alert.alert("Error", "No user logged in. Please login first.");
+      return;
+    }
+
+    try {
+      setUploading(true);
+      console.log("=== START UPLOAD PROCESS ===");
+      console.log("User ID:", currentUser.uid);
+      console.log("User Email:", currentUser.email);
+
+      // Step 1: Upload to Cloudinary
+      console.log("Step 1: Uploading to Cloudinary...");
+      const cloudImageUrl = await uploadImageToCloudinary(imageUri);
+      console.log("✓ Cloudinary returned URL:", cloudImageUrl);
+
+      if (!cloudImageUrl) {
+        throw new Error("Cloudinary returned empty URL");
+      }
+
+      // Step 2: Update Firebase Auth
+      console.log("Step 2: Updating Firebase Auth profile...");
+      await updateProfile(currentUser, { photoURL: cloudImageUrl });
+      console.log("✓ Firebase Auth photoURL updated");
+
+      // Step 2b: RELOAD the user to persist changes
+      console.log("Step 2b: Reloading Firebase Auth user...");
+      await currentUser.reload();
+      console.log("✓ Firebase Auth user reloaded");
+
+      // Step 3: Save to Firestore
+      console.log("Step 3: Saving to Firestore...");
+      await setDoc(
+        doc(db, "users", currentUser.uid),
+        {
+          photoURL: cloudImageUrl,
+          displayName: currentUser.displayName || displayName || "",
+          email: currentUser.email || "",
+          updatedAt: new Date(),
+        },
+        { merge: true },
+      );
+      console.log("✓ Firestore photoURL saved");
+
+      // Step 4: Update local state
+      console.log("Step 4: Updating local state...");
+      setProfileImage(cloudImageUrl);
+      console.log("✓ Local state updated with photoURL:", cloudImageUrl);
+      console.log("=== UPLOAD PROCESS COMPLETE ===");
+
+      Alert.alert("Success", "Profile picture updated!");
+    } catch (error: any) {
+      console.error("✗ Upload Error:", error);
+      console.error("Error details:", {
+        code: error.code,
+        message: error.message,
+        stack: error.stack,
+      });
+      Alert.alert("Upload failed", error.message || "Something went wrong");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Remove profile picture
+  const removeProfilePicture = () => {
+    Alert.alert(
+      "Remove Photo",
+      "Are you sure you want to remove your profile picture?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          onPress: async () => {
+            const currentUser = auth.currentUser;
+            if (!currentUser) return;
+
+            try {
+              setUploading(true);
+
+              // Update Firebase Auth
+              await updateProfile(currentUser, { photoURL: null });
+              await currentUser.reload();
+
+              // Update Firestore
+              await setDoc(
+                doc(db, "users", currentUser.uid),
+                { photoURL: null, updatedAt: new Date() },
+                { merge: true },
+              );
+
+              setProfileImage(null);
+              setShowImagePickerModal(false);
+              Alert.alert("Success", "Profile picture removed!");
+            } catch (error: any) {
+              Alert.alert("Error", error.message);
+            } finally {
+              setUploading(false);
+            }
+          },
+          style: "destructive",
+        },
+      ],
+    );
+  };
+
+  // Update display name
+  const handleUpdateProfile = async () => {
+    const currentUser = auth.currentUser;
+
+    if (!displayName.trim() || !currentUser) {
+      Alert.alert("Error", "Please enter a name");
+      return;
+    }
+
+    try {
+      setUploading(true);
+
+      await updateProfile(currentUser, { displayName });
+
+      await setDoc(
+        doc(db, "users", currentUser.uid),
+        {
+          displayName,
+          name: displayName, // ✅ Also save as 'name' field
+          updatedAt: new Date(),
+        },
+        { merge: true },
+      );
+
+      setIsEditing(false);
+      Alert.alert(
+        "Success",
+        "Profile updated successfully! Your name will now appear on the home screen.",
+      );
+    } catch (error: any) {
+      console.error("Error updating profile:", error);
+      Alert.alert("Error", error.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Update bio
+  const handleUpdateBio = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+
+    try {
+      setUploading(true);
+      await setDoc(
+        doc(db, "users", currentUser.uid),
+        { bio, updatedAt: new Date() },
+        { merge: true },
+      );
+      setIsEditingBio(false);
+      Alert.alert("Success", "Bio updated!");
+    } catch (error: any) {
+      Alert.alert("Error", error.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Update contact info
+  const handleUpdateContact = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+
+    try {
+      setUploading(true);
+      await setDoc(
+        doc(db, "users", currentUser.uid),
+        { phoneNumber, location, dateOfBirth, updatedAt: new Date() },
+        { merge: true },
+      );
+      setIsEditingContact(false);
+      Alert.alert("Success", "Contact info updated!");
+    } catch (error: any) {
+      Alert.alert("Error", error.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Update settings
+  const handleUpdateSettings = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+
+    try {
+      await setDoc(
+        doc(db, "users", currentUser.uid),
+        {
+          settings: {
+            notificationsEnabled,
+            remindersEnabled,
+            darkModeEnabled,
+            soundEnabled,
+          },
+          updatedAt: new Date(),
+        },
+        { merge: true },
+      );
+    } catch (error: any) {
+      console.error("Error updating settings:", error);
+    }
+  };
+
+  // Update settings whenever they change
+  useEffect(() => {
+    if (user?.uid) {
+      handleUpdateSettings();
+    }
+  }, [notificationsEnabled, remindersEnabled, darkModeEnabled, soundEnabled]);
+
+  // Clear all data
   const handleClearData = () => {
     Alert.alert(
       "Clear All Data",
@@ -33,8 +445,8 @@ export default function Profile() {
         { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
-          onPress: () => {
-            // Clear habits from storage
+          onPress: async () => {
+            // TODO: Implement habit deletion from Firestore
             Alert.alert("Success", "All habits have been deleted.");
           },
           style: "destructive",
@@ -43,50 +455,78 @@ export default function Profile() {
     );
   };
 
-  const handleLogout = () => {
+  // Delete account
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "Delete Account",
+      "Are you sure? This action cannot be undone. All your data will be permanently deleted.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const currentUser = auth.currentUser;
+              if (currentUser) {
+                await setDoc(
+                  doc(db, "users", currentUser.uid),
+                  { deleted: true, deletedAt: new Date() },
+                  { merge: true },
+                );
+                await signOut(auth);
+                router.replace("/(auth)/login");
+                Alert.alert("Account Deleted", "Your account has been deleted");
+              }
+            } catch (error: any) {
+              Alert.alert("Error", error.message);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // Logout
+  const handleLogout = async () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Logout",
-        onPress: () => {
-          router.push("/(auth)/login");
-        },
         style: "destructive",
+        onPress: async () => {
+          await signOut(auth);
+          router.replace("/(auth)/login");
+        },
       },
     ]);
   };
 
-  const handleSaveProfile = () => {
-    if (!userName.trim()) {
-      Alert.alert("Error", "Name cannot be empty");
-      return;
-    }
-    Alert.alert("Success", "Profile updated successfully!");
-    setIsEditing(false);
-  };
-
-  const stats = [
-    {
-      label: "Total Habits",
-      value: "12",
-      icon: "checkmark-circle",
-      color: "#10b981",
-    },
-    { label: "This Month", value: "45", icon: "fire", color: "#f59e0b" },
-    {
-      label: "Best Streak",
-      value: "15 days",
-      icon: "trending-up",
-      color: "#3b82f6",
-    },
-    { label: "Achievements", value: "8", icon: "trophy", color: "#a855f7" },
-  ];
-
   const badges = [
-    { name: "First Habit", icon: "star", color: "#fbbf24" },
-    { name: "Week Warrior", icon: "flame", color: "#f97316" },
-    { name: "Consistency King", icon: "crown", color: "#ec4899" },
-    { name: "All-Star", icon: "sparkles", color: "#06b6d4" },
+    {
+      name: "First Habit",
+      icon: "star",
+      color: "#fbbf24",
+      unlocked: stats.totalHabits >= 1,
+    },
+    {
+      name: "Week Warrior",
+      icon: "flame",
+      color: "#f97316",
+      unlocked: stats.bestStreak >= 7,
+    },
+    {
+      name: "Consistency King",
+      icon: "ribbon",
+      color: "#ec4899",
+      unlocked: stats.bestStreak >= 30,
+    },
+    {
+      name: "All-Star",
+      icon: "sparkles",
+      color: "#06b6d4",
+      unlocked: stats.achievements >= 5,
+    },
   ];
 
   return (
@@ -113,22 +553,52 @@ export default function Profile() {
 
           {/* Profile Picture */}
           <View className="items-center">
-            <View className="bg-white w-24 h-24 rounded-full items-center justify-center mb-4 border-4 border-emerald-700">
-              <Ionicons name="person" size={48} color="#10b981" />
-            </View>
-            <Text className="text-white text-2xl font-bold">{userName}</Text>
+            <TouchableOpacity
+              onPress={() => setShowImagePickerModal(true)}
+              className="relative"
+              disabled={uploading}
+            >
+              <View className="bg-white w-28 h-28 rounded-full items-center justify-center border-4 border-emerald-700 overflow-hidden">
+                {profileImage ? (
+                  <Image
+                    source={{ uri: `${profileImage}?t=${Date.now()}` }}
+                    className="w-full h-full"
+                    resizeMode="cover"
+                    onError={(error) =>
+                      console.error("Image load error:", error)
+                    }
+                    onLoadEnd={() => console.log("Image loaded successfully")}
+                  />
+                ) : (
+                  <Ionicons name="person" size={56} color="#10b981" />
+                )}
+              </View>
+
+              {/* Camera Badge */}
+              <View className="absolute bottom-0 right-0 bg-emerald-500 w-10 h-10 rounded-full items-center justify-center border-4 border-white">
+                {uploading ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <Ionicons name="camera" size={20} color="white" />
+                )}
+              </View>
+            </TouchableOpacity>
+
+            <Text className="text-white text-2xl font-bold mt-4">
+              {displayName || "Anonymous"}
+            </Text>
             <Text className="text-emerald-100 text-sm mt-1">{userEmail}</Text>
           </View>
         </View>
 
         {/* Content */}
         <View className="px-6 pt-8">
-          {/* Bio Section */}
+          {/* Display Name Section */}
           {!isEditing ? (
             <View className="bg-slate-900 rounded-2xl p-6 mb-6 border-2 border-slate-800">
               <View className="flex-row justify-between items-start mb-3">
                 <Text className="text-slate-300 text-sm font-semibold">
-                  BIO
+                  DISPLAY NAME
                 </Text>
                 <TouchableOpacity
                   onPress={() => setIsEditing(true)}
@@ -139,67 +609,214 @@ export default function Profile() {
                   </Text>
                 </TouchableOpacity>
               </View>
-              <Text className="text-white text-base leading-6">{userBio}</Text>
+              <Text className="text-white text-base leading-6">
+                {displayName || "Not set"}
+              </Text>
             </View>
           ) : (
             <View className="bg-slate-900 rounded-2xl p-6 mb-6 border-2 border-emerald-500">
               <Text className="text-slate-300 text-sm font-semibold mb-4">
-                EDIT PROFILE
+                EDIT NAME
               </Text>
 
-              {/* Name Input */}
-              <View className="mb-4">
+              <View className="mb-6">
                 <Text className="text-slate-300 text-sm font-semibold mb-2">
                   Name
                 </Text>
                 <TextInput
-                  value={userName}
-                  onChangeText={setUserName}
+                  value={displayName}
+                  onChangeText={setDisplayName}
                   className="bg-slate-800 text-white px-4 py-3 rounded-xl border border-slate-700"
                   placeholderTextColor="#64748b"
+                  placeholder="Enter your name"
                 />
               </View>
 
-              {/* Email Input */}
-              <View className="mb-4">
-                <Text className="text-slate-300 text-sm font-semibold mb-2">
-                  Email
+              <View className="flex-row gap-3">
+                <TouchableOpacity
+                  onPress={handleUpdateProfile}
+                  className="flex-1 bg-emerald-500 py-3 rounded-xl items-center"
+                  disabled={uploading}
+                >
+                  {uploading ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text className="text-white font-bold">Save Changes</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setIsEditing(false)}
+                  className="flex-1 bg-slate-800 py-3 rounded-xl items-center border border-slate-700"
+                >
+                  <Text className="text-slate-300 font-bold">Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Bio Section */}
+          {!isEditingBio ? (
+            <View className="bg-slate-900 rounded-2xl p-6 mb-6 border-2 border-slate-800">
+              <View className="flex-row justify-between items-start mb-3">
+                <Text className="text-slate-300 text-sm font-semibold">
+                  BIO
                 </Text>
-                <TextInput
-                  value={userEmail}
-                  onChangeText={setUserEmail}
-                  keyboardType="email-address"
-                  className="bg-slate-800 text-white px-4 py-3 rounded-xl border border-slate-700"
-                  placeholderTextColor="#64748b"
-                />
+                <TouchableOpacity
+                  onPress={() => setIsEditingBio(true)}
+                  className="bg-emerald-500/10 px-3 py-1 rounded-full"
+                >
+                  <Text className="text-emerald-400 text-xs font-bold">
+                    Edit
+                  </Text>
+                </TouchableOpacity>
               </View>
+              <Text className="text-white text-base leading-6">
+                {bio || "No bio added yet"}
+              </Text>
+            </View>
+          ) : (
+            <View className="bg-slate-900 rounded-2xl p-6 mb-6 border-2 border-emerald-500">
+              <Text className="text-slate-300 text-sm font-semibold mb-4">
+                EDIT BIO
+              </Text>
 
-              {/* Bio Input */}
               <View className="mb-6">
                 <Text className="text-slate-300 text-sm font-semibold mb-2">
                   Bio
                 </Text>
                 <TextInput
-                  value={userBio}
-                  onChangeText={setUserBio}
+                  value={bio}
+                  onChangeText={setBio}
                   multiline
-                  numberOfLines={3}
+                  numberOfLines={4}
                   className="bg-slate-800 text-white px-4 py-3 rounded-xl border border-slate-700 text-base"
                   placeholderTextColor="#64748b"
+                  placeholder="Tell us about yourself..."
                   textAlignVertical="top"
+                  style={{ minHeight: 100 }}
                 />
               </View>
 
-              {/* Action Buttons */}
               <View className="flex-row gap-3">
                 <TouchableOpacity
-                  onPress={handleSaveProfile}
+                  onPress={handleUpdateBio}
                   className="flex-1 bg-emerald-500 py-3 rounded-xl items-center"
+                  disabled={uploading}
                 >
-                  <Text className="text-white font-bold">Save</Text>
+                  {uploading ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text className="text-white font-bold">Save</Text>
+                  )}
                 </TouchableOpacity>
                 <TouchableOpacity
-                  onPress={() => setIsEditing(false)}
+                  onPress={() => setIsEditingBio(false)}
+                  className="flex-1 bg-slate-800 py-3 rounded-xl items-center border border-slate-700"
+                >
+                  <Text className="text-slate-300 font-bold">Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Contact Information */}
+          {!isEditingContact ? (
+            <View className="bg-slate-900 rounded-2xl p-6 mb-6 border-2 border-slate-800">
+              <View className="flex-row justify-between items-start mb-3">
+                <Text className="text-slate-300 text-sm font-semibold">
+                  CONTACT INFORMATION
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsEditingContact(true)}
+                  className="bg-emerald-500/10 px-3 py-1 rounded-full"
+                >
+                  <Text className="text-emerald-400 text-xs font-bold">
+                    Edit
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View className="mb-3">
+                <Text className="text-slate-400 text-xs">Phone</Text>
+                <Text className="text-white text-base mt-1">
+                  {phoneNumber || "Not set"}
+                </Text>
+              </View>
+
+              <View className="mb-3">
+                <Text className="text-slate-400 text-xs">Location</Text>
+                <Text className="text-white text-base mt-1">
+                  {location || "Not set"}
+                </Text>
+              </View>
+
+              <View>
+                <Text className="text-slate-400 text-xs">Date of Birth</Text>
+                <Text className="text-white text-base mt-1">
+                  {dateOfBirth || "Not set"}
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View className="bg-slate-900 rounded-2xl p-6 mb-6 border-2 border-emerald-500">
+              <Text className="text-slate-300 text-sm font-semibold mb-4">
+                EDIT CONTACT
+              </Text>
+
+              <View className="mb-4">
+                <Text className="text-slate-300 text-sm font-semibold mb-2">
+                  Phone Number
+                </Text>
+                <TextInput
+                  value={phoneNumber}
+                  onChangeText={setPhoneNumber}
+                  placeholder="+1 234 567 8900"
+                  keyboardType="phone-pad"
+                  className="bg-slate-800 text-white px-4 py-3 rounded-xl border border-slate-700"
+                  placeholderTextColor="#64748b"
+                />
+              </View>
+
+              <View className="mb-4">
+                <Text className="text-slate-300 text-sm font-semibold mb-2">
+                  Location
+                </Text>
+                <TextInput
+                  value={location}
+                  onChangeText={setLocation}
+                  placeholder="City, Country"
+                  className="bg-slate-800 text-white px-4 py-3 rounded-xl border border-slate-700"
+                  placeholderTextColor="#64748b"
+                />
+              </View>
+
+              <View className="mb-6">
+                <Text className="text-slate-300 text-sm font-semibold mb-2">
+                  Date of Birth
+                </Text>
+                <TextInput
+                  value={dateOfBirth}
+                  onChangeText={setDateOfBirth}
+                  placeholder="YYYY-MM-DD"
+                  className="bg-slate-800 text-white px-4 py-3 rounded-xl border border-slate-700"
+                  placeholderTextColor="#64748b"
+                />
+              </View>
+
+              <View className="flex-row gap-3">
+                <TouchableOpacity
+                  onPress={handleUpdateContact}
+                  className="flex-1 bg-emerald-500 py-3 rounded-xl items-center"
+                  disabled={uploading}
+                >
+                  {uploading ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text className="text-white font-bold">Save</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setIsEditingContact(false)}
                   className="flex-1 bg-slate-800 py-3 rounded-xl items-center border border-slate-700"
                 >
                   <Text className="text-slate-300 font-bold">Cancel</Text>
@@ -214,29 +831,53 @@ export default function Profile() {
               Statistics
             </Text>
             <View className="gap-3">
-              {stats.map((stat, index) => (
-                <View
-                  key={index}
-                  className="bg-slate-900 rounded-2xl p-5 border-2 border-slate-800 flex-row items-center"
-                >
-                  <View
-                    className="w-12 h-12 rounded-xl items-center justify-center mr-4"
-                    style={{ backgroundColor: `${stat.color}20` }}
-                  >
-                    <Ionicons
-                      name={stat.icon as any}
-                      size={24}
-                      color={stat.color}
-                    />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-slate-400 text-sm">{stat.label}</Text>
-                    <Text className="text-white text-2xl font-bold mt-1">
-                      {stat.value}
-                    </Text>
-                  </View>
+              <View className="bg-slate-900 rounded-2xl p-5 border-2 border-slate-800 flex-row items-center">
+                <View className="w-12 h-12 rounded-xl items-center justify-center mr-4 bg-emerald-500/20">
+                  <Ionicons name="checkmark-circle" size={24} color="#10b981" />
                 </View>
-              ))}
+                <View className="flex-1">
+                  <Text className="text-slate-400 text-sm">Total Habits</Text>
+                  <Text className="text-white text-2xl font-bold mt-1">
+                    {stats.totalHabits}
+                  </Text>
+                </View>
+              </View>
+
+              <View className="bg-slate-900 rounded-2xl p-5 border-2 border-slate-800 flex-row items-center">
+                <View className="w-12 h-12 rounded-xl items-center justify-center mr-4 bg-amber-500/20">
+                  <Ionicons name="flame" size={24} color="#f59e0b" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-slate-400 text-sm">This Month</Text>
+                  <Text className="text-white text-2xl font-bold mt-1">
+                    {stats.completedThisMonth}
+                  </Text>
+                </View>
+              </View>
+
+              <View className="bg-slate-900 rounded-2xl p-5 border-2 border-slate-800 flex-row items-center">
+                <View className="w-12 h-12 rounded-xl items-center justify-center mr-4 bg-blue-500/20">
+                  <Ionicons name="trending-up" size={24} color="#3b82f6" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-slate-400 text-sm">Best Streak</Text>
+                  <Text className="text-white text-2xl font-bold mt-1">
+                    {stats.bestStreak} days
+                  </Text>
+                </View>
+              </View>
+
+              <View className="bg-slate-900 rounded-2xl p-5 border-2 border-slate-800 flex-row items-center">
+                <View className="w-12 h-12 rounded-xl items-center justify-center mr-4 bg-purple-500/20">
+                  <Ionicons name="trophy" size={24} color="#a855f7" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-slate-400 text-sm">Achievements</Text>
+                  <Text className="text-white text-2xl font-bold mt-1">
+                    {stats.achievements}
+                  </Text>
+                </View>
+              </View>
             </View>
           </View>
 
@@ -249,7 +890,11 @@ export default function Profile() {
               {badges.map((badge, index) => (
                 <TouchableOpacity
                   key={index}
-                  className="flex-1 bg-slate-900 rounded-2xl p-4 items-center border-2 border-slate-800 min-w-[45%]"
+                  className={`flex-1 bg-slate-900 rounded-2xl p-4 items-center border-2 min-w-[45%] ${
+                    badge.unlocked
+                      ? "border-slate-700"
+                      : "border-slate-800 opacity-40"
+                  }`}
                 >
                   <View
                     className="w-12 h-12 rounded-full items-center justify-center mb-2"
@@ -258,10 +903,14 @@ export default function Profile() {
                     <Ionicons
                       name={badge.icon as any}
                       size={24}
-                      color={badge.color}
+                      color={badge.unlocked ? badge.color : "#64748b"}
                     />
                   </View>
-                  <Text className="text-slate-300 text-xs text-center font-semibold">
+                  <Text
+                    className={`text-xs text-center font-semibold ${
+                      badge.unlocked ? "text-slate-300" : "text-slate-500"
+                    }`}
+                  >
                     {badge.name}
                   </Text>
                 </TouchableOpacity>
@@ -270,25 +919,45 @@ export default function Profile() {
           </View>
 
           {/* Account Section */}
-          <View>
+          <View className="mb-8">
             <Text className="text-lg font-bold text-white mb-4">Account</Text>
 
-            {/* Member Since */}
             <View className="bg-slate-900 rounded-2xl p-5 mb-3 border-2 border-slate-800">
               <View className="flex-row items-center">
                 <View className="bg-blue-500/10 w-12 h-12 rounded-xl items-center justify-center mr-4">
-                  <Ionicons name="calendar-outline" size={24} color="#3b82f6" />
+                  <Ionicons name="mail-outline" size={24} color="#3b82f6" />
                 </View>
                 <View className="flex-1">
-                  <Text className="text-slate-400 text-sm">Member Since</Text>
-                  <Text className="text-white font-bold mt-1">
-                    January 2024
-                  </Text>
+                  <Text className="text-slate-400 text-sm">Email</Text>
+                  <Text className="text-white font-bold mt-1">{userEmail}</Text>
                 </View>
               </View>
             </View>
 
-            {/* Joined Date */}
+            {accountCreatedDate && (
+              <View className="bg-slate-900 rounded-2xl p-5 mb-3 border-2 border-slate-800">
+                <View className="flex-row items-center">
+                  <View className="bg-purple-500/10 w-12 h-12 rounded-xl items-center justify-center mr-4">
+                    <Ionicons
+                      name="calendar-outline"
+                      size={24}
+                      color="#a855f7"
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-slate-400 text-sm">Member Since</Text>
+                    <Text className="text-white font-bold mt-1">
+                      {accountCreatedDate.toLocaleDateString("en-US", {
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
             <View className="bg-slate-900 rounded-2xl p-5 border-2 border-slate-800">
               <View className="flex-row items-center">
                 <View className="bg-green-500/10 w-12 h-12 rounded-xl items-center justify-center mr-4">
@@ -301,7 +970,12 @@ export default function Profile() {
                 <View className="flex-1">
                   <Text className="text-slate-400 text-sm">Last Active</Text>
                   <Text className="text-white font-bold mt-1">
-                    Today at 2:30 PM
+                    {lastActiveDate?.toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
                   </Text>
                 </View>
               </View>
@@ -312,7 +986,7 @@ export default function Profile() {
           <View className="mb-8">
             <Text className="text-xl font-bold text-white mb-4">Settings</Text>
 
-            {/* Notifications Section */}
+            {/* Notifications */}
             <View className="mb-6">
               <Text className="text-lg font-bold text-white mb-4">
                 Notifications
@@ -367,7 +1041,7 @@ export default function Profile() {
               </View>
             </View>
 
-            {/* Display Section */}
+            {/* Display */}
             <View className="mb-6">
               <Text className="text-lg font-bold text-white mb-4">Display</Text>
 
@@ -420,7 +1094,7 @@ export default function Profile() {
               </View>
             </View>
 
-            {/* App Section */}
+            {/* App */}
             <View className="mb-6">
               <Text className="text-lg font-bold text-white mb-4">App</Text>
 
@@ -466,7 +1140,7 @@ export default function Profile() {
                 <Ionicons name="chevron-forward" size={24} color="#64748b" />
               </TouchableOpacity>
 
-              <TouchableOpacity className="bg-slate-900 rounded-2xl p-5 border-2 border-slate-800 flex-row items-center justify-between">
+              <TouchableOpacity className="bg-slate-900 rounded-2xl p-5 mb-3 border-2 border-slate-800 flex-row items-center justify-between">
                 <View className="flex-row items-center flex-1">
                   <View className="bg-cyan-500/10 w-12 h-12 rounded-xl items-center justify-center mr-4">
                     <Ionicons
@@ -481,6 +1155,27 @@ export default function Profile() {
                     </Text>
                     <Text className="text-slate-400 text-sm mt-1">
                       Our terms of service
+                    </Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#64748b" />
+              </TouchableOpacity>
+
+              <TouchableOpacity className="bg-slate-900 rounded-2xl p-5 border-2 border-slate-800 flex-row items-center justify-between">
+                <View className="flex-row items-center flex-1">
+                  <View className="bg-amber-500/10 w-12 h-12 rounded-xl items-center justify-center mr-4">
+                    <Ionicons
+                      name="help-circle-outline"
+                      size={24}
+                      color="#f59e0b"
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-white font-bold text-base">
+                      Help & Support
+                    </Text>
+                    <Text className="text-slate-400 text-sm mt-1">
+                      Get assistance
                     </Text>
                   </View>
                 </View>
@@ -515,6 +1210,30 @@ export default function Profile() {
               </TouchableOpacity>
 
               <TouchableOpacity
+                onPress={handleDeleteAccount}
+                className="bg-red-500/10 rounded-2xl p-5 mb-3 border-2 border-red-500/30 flex-row items-center justify-between"
+              >
+                <View className="flex-row items-center flex-1">
+                  <View className="bg-red-500/20 w-12 h-12 rounded-xl items-center justify-center mr-4">
+                    <Ionicons
+                      name="warning-outline"
+                      size={24}
+                      color="#ef4444"
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-red-400 font-bold text-base">
+                      Delete Account
+                    </Text>
+                    <Text className="text-red-300/70 text-sm mt-1">
+                      Permanently remove account
+                    </Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#ef4444" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 onPress={handleLogout}
                 className="bg-red-500/10 rounded-2xl p-5 border-2 border-red-500/30 flex-row items-center justify-between"
               >
@@ -541,6 +1260,101 @@ export default function Profile() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Image Picker Modal */}
+      <Modal
+        visible={showImagePickerModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowImagePickerModal(false)}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setShowImagePickerModal(false)}
+          className="flex-1 bg-black/60 justify-end"
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            className="bg-slate-900 rounded-t-3xl p-6"
+          >
+            <View className="w-12 h-1 bg-slate-700 rounded-full self-center mb-6" />
+
+            <Text className="text-white text-2xl font-bold mb-6">
+              Profile Picture
+            </Text>
+
+            {/* Take Photo */}
+            <TouchableOpacity
+              onPress={takePhoto}
+              disabled={uploading}
+              className="bg-slate-800 rounded-2xl p-5 mb-3 border-2 border-slate-700 flex-row items-center"
+            >
+              <View className="bg-blue-500/10 w-12 h-12 rounded-xl items-center justify-center mr-4">
+                <Ionicons name="camera" size={24} color="#3b82f6" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-white font-bold text-base">
+                  Take Photo
+                </Text>
+                <Text className="text-slate-400 text-sm mt-1">
+                  Use your camera
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={24} color="#64748b" />
+            </TouchableOpacity>
+
+            {/* Choose from Gallery */}
+            <TouchableOpacity
+              onPress={pickImage}
+              disabled={uploading}
+              className="bg-slate-800 rounded-2xl p-5 mb-3 border-2 border-slate-700 flex-row items-center"
+            >
+              <View className="bg-purple-500/10 w-12 h-12 rounded-xl items-center justify-center mr-4">
+                <Ionicons name="images" size={24} color="#a855f7" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-white font-bold text-base">
+                  Choose from Gallery
+                </Text>
+                <Text className="text-slate-400 text-sm mt-1">
+                  Select from your photos
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={24} color="#64748b" />
+            </TouchableOpacity>
+
+            {/* Remove Photo */}
+            {profileImage && (
+              <TouchableOpacity
+                onPress={removeProfilePicture}
+                disabled={uploading}
+                className="bg-red-500/10 rounded-2xl p-5 mb-3 border-2 border-red-500/30 flex-row items-center"
+              >
+                <View className="bg-red-500/20 w-12 h-12 rounded-xl items-center justify-center mr-4">
+                  <Ionicons name="trash" size={24} color="#ef4444" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-red-400 font-bold text-base">
+                    Remove Photo
+                  </Text>
+                  <Text className="text-red-300/70 text-sm mt-1">
+                    Delete current picture
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#ef4444" />
+              </TouchableOpacity>
+            )}
+
+            {/* Cancel */}
+            <TouchableOpacity
+              onPress={() => setShowImagePickerModal(false)}
+              className="bg-slate-800 rounded-2xl p-4 mt-2 items-center"
+            >
+              <Text className="text-slate-300 font-bold">Cancel</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }

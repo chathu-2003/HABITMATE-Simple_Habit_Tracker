@@ -6,6 +6,10 @@ import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { AuthContext } from "../../context/AuthContext";
 import { db } from "../../services/firebase";
 import {
+  getAllHabitsFromFirestore,
+  subscribeToHabits,
+} from "../../services/firestoreService";
+import {
   getAllHabits,
   toggleHabitCompletion,
 } from "../../services/habitService";
@@ -71,12 +75,81 @@ export default function Home() {
     fetchUserProfile();
   }, [user]);
 
-  // Load habits when screen comes into focus
+  // Load habits when screen comes into focus or when user changes
   useFocusEffect(
     useCallback(() => {
       loadHabits();
-    }, []),
+    }, [user?.uid]),
   );
+
+  // Also load habits when auth user becomes available and subscribe to Firestore
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+    let mounted = true;
+
+    const setup = async () => {
+      console.log("Home.setup: user ->", user?.uid, user?.email);
+
+      // First try local helper (which already tries UID -> email fallback)
+      const local = await getAllHabits();
+      console.log("Home.setup: local habits count ->", local.length);
+      if (mounted) {
+        setHabits(local);
+      }
+
+      // Then set up realtime subscription to Firestore for this user
+      unsubscribe = subscribeToHabits(
+        (firestoreHabits) => {
+          console.log("Home.subscription: received ->", firestoreHabits.length);
+          console.log(
+            "Home.subscription: sample ->",
+            firestoreHabits
+              .slice(0, 10)
+              .map((h) => ({ id: h.id, userId: h.userId })),
+          );
+          if (mounted) {
+            setHabits(firestoreHabits);
+          }
+        },
+        (err) => {
+          console.error(
+            "Firestore subscription failed, keeping local data",
+            err,
+          );
+        },
+        user?.uid,
+        user?.email ?? undefined,
+      );
+
+      // Finally ensure we have the latest snapshot via one-time fetch
+      try {
+        const latest = await getAllHabitsFromFirestore(
+          user?.uid,
+          user?.email ?? undefined,
+        );
+        console.log("Home.fetchLatest: count ->", latest.length);
+        console.log(
+          "Home.fetchLatest: sample ->",
+          latest.slice(0, 10).map((h) => ({ id: h.id, userId: h.userId })),
+        );
+        if (mounted) {
+          // apply latest even if empty so UI reflects Firestore truth
+          setHabits(latest);
+        }
+      } catch (e) {
+        console.error("Home.fetchLatest: failed to fetch latest:", e);
+      }
+    };
+
+    if (user?.uid || user?.email) {
+      setup();
+    }
+
+    return () => {
+      mounted = false;
+      if (unsubscribe) unsubscribe();
+    };
+  }, [user?.uid, user?.email]);
 
   const loadHabits = async () => {
     const storedHabits = await getAllHabits();

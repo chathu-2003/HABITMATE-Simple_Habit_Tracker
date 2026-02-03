@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -50,6 +51,13 @@ export default function Habits() {
   useEffect(() => {
     loadHabits();
   }, []);
+
+  // Reload habits whenever this screen becomes focused (e.g., after adding a new habit)
+  useFocusEffect(
+    useCallback(() => {
+      loadHabits();
+    }, []),
+  );
 
   // Open habit modal
   const openHabit = (h: Habit) => {

@@ -1,12 +1,13 @@
 import {
-    addDoc,
-    collection,
-    deleteDoc,
-    doc,
-    getDocs,
-    onSnapshot,
-    query,
-    updateDoc
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  onSnapshot,
+  query,
+  updateDoc,
+  where,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -22,6 +23,7 @@ export interface Habit {
   color: string;
   completed: boolean;
   createdAt: string;
+  userId?: string; // optional: may contain UID or email
 }
 
 /**
@@ -43,15 +45,45 @@ export const saveHabitToFirestore = async (
 /**
  * Get all habits from Firestore
  */
-export const getAllHabitsFromFirestore = async (): Promise<Habit[]> => {
+export const getAllHabitsFromFirestore = async (
+  userId?: string,
+  userEmail?: string,
+): Promise<Habit[]> => {
   try {
-    const q = query(collection(db, COLLECTION_NAME));
-    const snapshot = await getDocs(q);
+    // Build query: match UID and/or email when possible (use 'in' if both present)
+    let q;
+    if (userId && userEmail) {
+      q = query(
+        collection(db, COLLECTION_NAME),
+        where("userId", "in", [userId, userEmail]),
+      );
+      console.log(
+        "Firestore query: match userId or userEmail ->",
+        userId,
+        userEmail,
+      );
+    } else if (userId) {
+      q = query(collection(db, COLLECTION_NAME), where("userId", "==", userId));
+      console.log("Firestore query: match userId ->", userId);
+    } else if (userEmail) {
+      q = query(
+        collection(db, COLLECTION_NAME),
+        where("userId", "==", userEmail),
+      );
+      console.log("Firestore query: match userEmail ->", userEmail);
+    } else {
+      q = query(collection(db, COLLECTION_NAME));
+      console.log("Firestore query: match all habits");
+    }
+
+    const snapshot = await getDocs(q as any);
+    console.log(`Firestore returned ${snapshot.docs.length} documents`);
+
     const habits = snapshot.docs.map(
       (doc) =>
         ({
           id: doc.id,
-          ...doc.data(),
+          ...(doc.data() as any),
         }) as Habit,
     );
     return habits;
@@ -67,22 +99,52 @@ export const getAllHabitsFromFirestore = async (): Promise<Habit[]> => {
 export const subscribeToHabits = (
   callback: (habits: Habit[]) => void,
   errorCallback?: (error: any) => void,
+  userId?: string,
+  userEmail?: string,
 ): (() => void) => {
   try {
-    const q = query(collection(db, COLLECTION_NAME));
+    // Build query: match UID and/or email when possible (use 'in' if both present)
+    let q;
+    if (userId && userEmail) {
+      q = query(
+        collection(db, COLLECTION_NAME),
+        where("userId", "in", [userId, userEmail]),
+      );
+      console.log(
+        "Firestore listener: match userId or userEmail ->",
+        userId,
+        userEmail,
+      );
+    } else if (userId) {
+      q = query(collection(db, COLLECTION_NAME), where("userId", "==", userId));
+      console.log("Firestore listener: match userId ->", userId);
+    } else if (userEmail) {
+      q = query(
+        collection(db, COLLECTION_NAME),
+        where("userId", "==", userEmail),
+      );
+      console.log("Firestore listener: match userEmail ->", userEmail);
+    } else {
+      q = query(collection(db, COLLECTION_NAME));
+      console.log("Firestore listener: match all habits");
+    }
+
     const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
+      q as any,
+      (snapshot: any) => {
+        console.log(
+          `Firestore listener returned ${snapshot.docs.length} documents`,
+        );
         const habits = snapshot.docs.map(
-          (doc) =>
+          (doc: any) =>
             ({
               id: doc.id,
-              ...doc.data(),
+              ...(doc.data() as any),
             }) as Habit,
         );
         callback(habits);
       },
-      (error) => {
+      (error: any) => {
         console.error("Error listening to Firestore habits:", error);
         if (errorCallback) {
           errorCallback(error);

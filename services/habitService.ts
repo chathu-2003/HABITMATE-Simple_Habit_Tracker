@@ -69,19 +69,43 @@ export const getAllHabits = async (): Promise<Habit[]> => {
       return [];
     }
 
-    console.log("🔍 Fetching habits for userId:", userId);
+    const userEmail = auth.currentUser?.email;
+    console.log("🔍 Fetching habits for userId:", userId, "email:", userEmail);
 
-    const q = query(
+    // First try by UID
+    let q = query(
       collection(db, HABITS_COLLECTION),
       where("userId", "==", userId),
     );
-    const snapshot = await getDocs(q);
-    const habits = snapshot.docs.map((d) => ({
+
+    let snapshot = await getDocs(q);
+
+    let habits = snapshot.docs.map((d) => ({
       id: d.id,
       ...(d.data() as Omit<Habit, "id">),
     }));
 
-    console.log(`✅ Loaded ${habits.length} habits for user: ${userId}`);
+    // If none found for UID, try fallback by email (handles older records using email)
+    if (habits.length === 0 && userEmail) {
+      console.log(
+        "🔁 No habits found for UID, trying fallback by email:",
+        userEmail,
+      );
+      const q2 = query(
+        collection(db, HABITS_COLLECTION),
+        where("userId", "==", userEmail),
+      );
+      const snapshot2 = await getDocs(q2);
+      habits = snapshot2.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<Habit, "id">),
+      }));
+      console.log(
+        `✅ Fallback loaded ${habits.length} habits for user email: ${userEmail}`,
+      );
+    } else {
+      console.log(`✅ Loaded ${habits.length} habits for user: ${userId}`);
+    }
 
     // Log each habit's userId for debugging
     habits.forEach((h) => {

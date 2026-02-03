@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useContext, useEffect, useMemo, useState } from "react";
 import {
   Dimensions,
   ScrollView,
@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { AuthContext } from "../../context/AuthContext";
 import {
   getAllHabitsFromFirestore,
   subscribeToHabits,
@@ -580,6 +581,8 @@ export default function Progress() {
   );
 
   // Load habits with real-time updates
+  const { user } = useContext(AuthContext);
+
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
     let mounted = true;
@@ -616,6 +619,9 @@ export default function Progress() {
               loadLocal();
             }
           },
+          // Pass user filters so listener returns only current user's habits
+          user?.uid,
+          user?.email ?? undefined,
         );
       } catch (error) {
         if (mounted) {
@@ -633,13 +639,16 @@ export default function Progress() {
         unsubscribe();
       }
     };
-  }, []);
+  }, [user?.uid, user?.email]);
 
   useFocusEffect(
     React.useCallback(() => {
       const refreshHabits = async () => {
         try {
-          const firestoreHabits = await getAllHabitsFromFirestore();
+          const firestoreHabits = await getAllHabitsFromFirestore(
+            user?.uid,
+            user?.email ?? undefined,
+          );
           setHabits(firestoreHabits);
           setError(null);
           setIsLoading(false);
@@ -656,7 +665,7 @@ export default function Progress() {
         }
       };
       refreshHabits();
-    }, []),
+    }, [user?.uid, user?.email]),
   );
 
   // Render Functions
