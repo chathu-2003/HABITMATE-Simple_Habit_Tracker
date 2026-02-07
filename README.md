@@ -1,7 +1,4 @@
-<div align="center">
-
 # 📱 Habit Mate
-
 ### *Build Better Habits, Track Your Progress, Achieve Your Goals*
 
 [![React Native](https://img.shields.io/badge/React%20Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactnative.dev/)
@@ -13,13 +10,23 @@
 
 ---
 
-<p align="center">
-  <img src="https://img.shields.io/badge/status-active-success.svg" alt="Status">
-  <img src="https://img.shields.io/badge/license-Educational-blue.svg" alt="License">
-  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome">
-</p>
+## 🚀 Try It Now!
+
+### 📲 **Download the Android APK**
+
+**Get started immediately by installing the app on your Android device:**
+
+🤖 **[Download Habit Mate APK](https://expo.dev/accounts/chathuralakshan/projects/HabitMate/builds/92072a25-2744-4c3a-a88b-01f572111559)**
+
+<div align="center">
+  
+**OR Scan this QR Code:**
+
+![QR Code](https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://expo.dev/accounts/chathuralakshan/projects/HabitMate/builds/92072a25-2744-4c3a-a88b-01f572111559)
 
 </div>
+
+> **Note:** Open the link on your Android device or scan the QR code to install the app directly. Make sure to enable "Install from Unknown Sources" in your device settings if prompted.
 
 ---
 
@@ -32,10 +39,6 @@ Whether you're trying to exercise more, read daily, or develop any positive rout
 ---
 
 ## ✨ Features
-
-
-<tr>
-<td width="50%">
 
 ### 🏠 **Smart Dashboard**
 - Real-time progress overview
@@ -55,9 +58,6 @@ Whether you're trying to exercise more, read daily, or develop any positive rout
 - Archive or delete habits
 - Search & filter capabilities
 
-</td>
-<td width="50%">
-
 ### 📊 **Advanced Progress Tracking**
 - Visual progress indicators
 - Completion rate analytics
@@ -75,10 +75,6 @@ Whether you're trying to exercise more, read daily, or develop any positive rout
 - Settings & preferences
 - Account management
 - Theme customization
-
-</td>
-</tr>
-</table>
 
 ---
 
@@ -104,41 +100,39 @@ Whether you're trying to exercise more, read daily, or develop any positive rout
 ```
 HabitMate/
 │
-├── 📱 app/                          # Application Screens
-│   ├── (tabs)/                      # Tab-based navigation
-│   │   ├── index.tsx               # Home Dashboard
-│   │   ├── habits.tsx              # Habits List
-│   │   ├── progress.tsx            # Progress Analytics
-│   │   ├── tasks.tsx               # Daily Tasks
-│   │   └── profile.tsx             # User Profile
+├── 📱 app/                      # Application Screens
+│   ├── (tabs)/                  # Tab-based navigation
+│   │   ├── index.tsx           # Home Dashboard
+│   │   ├── habits.tsx          # Habits List
+│   │   ├── progress.tsx        # Progress Analytics
+│   │   ├── tasks.tsx           # Daily Tasks
+│   │   └── profile.tsx         # User Profile
 │   │
-│   ├── add-habit.tsx               # Add New Habit Screen
-│   ├── edit-habit/[id].tsx         # Edit Habit Screen
-│   └── _layout.tsx                 # Root Layout
+│   ├── add-habit.tsx           # Add New Habit Screen
+│   ├── edit-habit/[id].tsx     # Edit Habit Screen
+│   └── _layout.tsx             # Root Layout
 │
-├── 🔧 services/                     # Backend Services
-│   ├── firebase.ts                 # Firebase Configuration
-│   ├── habitService.ts             # Habit CRUD Operations
-│   ├── userService.ts              # User Management
-│           
+├── 🔧 services/                 # Backend Services
+│   ├── firebase.ts             # Firebase Configuration
+│   ├── habitService.ts         # Habit CRUD Operations
+│   ├── userService.ts          # User Management
 │
-├── 🎯 hooks/                        # Custom React Hooks                                
-│   ├── useLoader.ts                  # Authentication Logic                 
+├── 🎯 hooks/                    # Custom React Hooks
+│   ├── useLoader.ts            # Authentication Logic
 │
+├── 🖼️ assets/                   # Static Assets
+│   ├── images/                 # App Images
+│   ├── icons/                  # Custom Icons
+│   └── fonts/                  # Custom Fonts
 │
-├── 🖼️ assets/                       # Static Assets
-│   ├── images/                     # App Images
-│   ├── icons/                      # Custom Icons
-│   └── fonts/                      # Custom Fonts
-│
-├── 📝 types/                        # TypeScript Types
-│   └── index.ts                    # Type Definitions
+├── 📝 types/                    # TypeScript Types
+│   └── index.ts                # Type Definitions
 │
 └── 📄 Configuration Files
-    ├── app.json                    # Expo Configuration
-    ├── package.json                # Dependencies
-    ├── tsconfig.json               # TypeScript Config
-    └── README.md                   # Documentation
+    ├── app.json                # Expo Configuration
+    ├── package.json            # Dependencies
+    ├── tsconfig.json           # TypeScript Config
+    └── README.md               # Documentation
 ```
 
 ---
@@ -440,6 +434,7 @@ For commercial use, please contact the author.
 <div align="center">
 
 ### Chathura Lakshan
+
 **Software Engineer | Mobile Developer | Tech Enthusiast**
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/chathuralakshan)
