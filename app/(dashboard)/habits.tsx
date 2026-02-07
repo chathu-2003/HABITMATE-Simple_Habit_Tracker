@@ -104,7 +104,7 @@ export default function Habits() {
   };
 
   // Delete habit
-  const onDelete = () => {
+  const onDelete = async () => {
     if (!selected) return;
 
     Alert.alert("Delete Habit", "Are you sure you want to delete this habit?", [
@@ -115,22 +115,22 @@ export default function Habits() {
         onPress: async () => {
           setLoading(true);
           const success = await deleteHabit(selected.id);
-          setLoading(false);
 
           if (success) {
-            Alert.alert("Deleted", "Habit deleted successfully!");
             setSelected(null);
-            loadHabits();
+            await loadHabits();
+            Alert.alert("Deleted", "Habit deleted successfully!");
           } else {
+            setLoading(false);
             Alert.alert(
               "Error",
               "Failed to delete habit. It may have already been deleted. Refreshing list...",
               [
                 {
                   text: "OK",
-                  onPress: () => {
+                  onPress: async () => {
                     setSelected(null);
-                    loadHabits(); // Refresh the list
+                    await loadHabits();
                   },
                 },
               ],

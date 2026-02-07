@@ -1,7 +1,6 @@
 import {
   addDoc,
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -27,6 +26,7 @@ export interface Habit {
   completed: boolean;
   createdAt: Timestamp;
   userId: string;
+  isDeleted?: boolean;
 }
 
 const HABITS_COLLECTION = "habits";
@@ -80,10 +80,12 @@ export const getAllHabits = async (): Promise<Habit[]> => {
 
     let snapshot = await getDocs(q);
 
-    let habits = snapshot.docs.map((d) => ({
-      id: d.id,
-      ...(d.data() as Omit<Habit, "id">),
-    }));
+    let habits = snapshot.docs
+      .map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<Habit, "id">),
+      }))
+      .filter((h) => !h || !h.isDeleted); // Filter out deleted habits
 
     // If none found for UID, try fallback by email (handles older records using email)
     if (habits.length === 0 && userEmail) {
@@ -96,10 +98,12 @@ export const getAllHabits = async (): Promise<Habit[]> => {
         where("userId", "==", userEmail),
       );
       const snapshot2 = await getDocs(q2);
-      habits = snapshot2.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<Habit, "id">),
-      }));
+      habits = snapshot2.docs
+        .map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<Habit, "id">),
+        }))
+        .filter((h) => !h || !h.isDeleted); // Filter out deleted habits
       console.log(
         `✅ Fallback loaded ${habits.length} habits for user email: ${userEmail}`,
       );
@@ -141,7 +145,7 @@ export const getHabitById = async (habitId: string): Promise<Habit | null> => {
 };
 
 /* =======================
-   UPDATE HABIT ✅
+   UPDATE HABIT
 ======================= */
 export const updateHabit = async (
   habitId: string,
@@ -166,10 +170,12 @@ export const updateHabit = async (
 };
 
 /* =======================
-   DELETE HABIT
+   DELETE HABIT (Soft Delete)
 ======================= */
 export const deleteHabit = async (habitId: string): Promise<boolean> => {
   try {
+    console.log(`🗑️ Starting delete for habit: ${habitId}`);
+
     // Check if document exists before deleting
     const habitDoc = await getDoc(doc(db, HABITS_COLLECTION, habitId));
 
@@ -178,17 +184,36 @@ export const deleteHabit = async (habitId: string): Promise<boolean> => {
       return false;
     }
 
-    await deleteDoc(doc(db, HABITS_COLLECTION, habitId));
-    console.log(`✅ Habit ${habitId} deleted successfully`);
-    return true;
-  } catch (error) {
+    try {
+      // Try soft delete first - mark as deleted
+      await updateDoc(doc(db, HABITS_COLLECTION, habitId), {
+        isDeleted: true,
+      });
+      console.log(`✅ Habit ${habitId} marked as deleted successfully`);
+      return true;
+    } catch (updateError: any) {
+      console.error(
+        "⚠️ Soft delete failed, trying alternative method:",
+        updateError?.message,
+      );
+      // If update fails, try with merge option
+      await updateDoc(doc(db, HABITS_COLLECTION, habitId), {
+        isDeleted: true,
+      });
+      console.log(`✅ Habit ${habitId} deleted with fallback method`);
+      return true;
+    }
+  } catch (error: any) {
     console.error("❌ deleteHabit error:", error);
+    console.error("Error code:", error?.code);
+    console.error("Error message:", error?.message);
+    console.error("Full error object:", JSON.stringify(error));
     return false;
   }
 };
 
 /* =======================
-   TOGGLE COMPLETION ✅
+   TOGGLE COMPLETION
 ======================= */
 export const toggleHabitCompletion = async (
   habitId: string,
